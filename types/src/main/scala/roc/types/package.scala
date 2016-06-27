@@ -8,4 +8,5 @@ package object types {
   type Date = LocalDate
   type Time = LocalTime
   type TimestampWithTZ = ZonedDateTime
+  type HStore = Map[String, Option[String]]
 }

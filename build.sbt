@@ -107,12 +107,14 @@ lazy val types = project
     )
   )
   .dependsOn(core)
+  .dependsOn(core % "it->it")
 
 lazy val benchmark = project
   .settings(
     description := "roc-benchmark",
     moduleName := "roc-benchmark"
   )
+  .configs( IntegrationTest )
   .settings(allSettings:_*)
   .settings(noPublishSettings)
   .enablePlugins(JmhPlugin)

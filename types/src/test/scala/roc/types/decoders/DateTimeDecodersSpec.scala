@@ -19,22 +19,16 @@ final class DateTimeDecodersSpec extends Specification with ScalaCheck { def is 
   LocalDate
     must correctly decode Text representation                                      $testValidTextLocalDate
     must throw a ElementDecodingFailure when Text decoding an invalid LocalDate    $testInvalidTextLocalDate
-    must correctly decode Binary representation                                    $testValidBinaryLocalDate
-    must throw a ElementDecodingFailure when Binary decoding an invalid LocalDate  $testInvalidBinaryLocalDate
     must throw a NullDecodedFailure when Null decoding LocalDate                   $testLocalDateNullDecoding
 
   LocalTime
     must correctly decode Text representation                                      $testValidLocalTimeText
     must throw a ElementDecodingFailure when Text decoding an invalid LocalTime    $testInvalidLocalTimeText
-    must correctly decode Binary representation                                    $testValidLocalTimeBinary
-    must throw a ElementDecodingFailure when Binary decoding an invalid LocalTime  $testInvalidLocalTimeBinary
     must throw a NullDecodedFailure when Null decoding LocalDate                   $testLocalTimeNullDecoding
 
   ZonedDateTime
     must correctly decode Text representation                                         $testValidZonedDateTimeText
     must throw a ElementDecodingFailure when Text decoding an invalid ZonedDateTime   $testInvalidZonedDateTimeText
-    must correctly decode Binary representation                                       $testValidZonedDateTimeBinary
-    must throw a ElementDecodingFailure when Binary decoding an invalid ZonedDateTime $testInvalidZonedDateTimeBinary
     must throw a NullDecodedFailure when Null decoding LocalDate                      $testZonedDateTimeNullDecoding
                                                                                     """
 

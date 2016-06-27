@@ -3,14 +3,17 @@ package types
 
 import cats.data.{Validated, Xor}
 import io.netty.buffer.Unpooled
-import java.nio.ByteBuffer
+import java.nio.{BufferUnderflowException, ByteBuffer}
 import java.nio.charset.StandardCharsets
 import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder}
-import java.time.temporal.ChronoField
-import java.time.{LocalDate, LocalTime, ZonedDateTime}
+import java.time.temporal.{ChronoField, JulianFields}
+import java.time._
+
 import jawn.ast.JParser
 import roc.postgresql.ElementDecoder
 import roc.types.failures._
+
+import scala.util.Failure
 
 object decoders {
 
@@ -23,7 +26,7 @@ object decoders {
 
   implicit val stringElementDecoder: ElementDecoder[String] = new ElementDecoder[String] {
     def textDecoder(text: String): String         = text
-    def binaryDecoder(bytes: Array[Byte]): String = bytes.map(_.toChar).mkString
+    def binaryDecoder(bytes: Array[Byte]): String = new String(bytes, StandardCharsets.UTF_8)
     def nullDecoder(): String                     = throw new NullDecodedFailure("STRING")
   }
 
@@ -117,6 +120,78 @@ object decoders {
     def nullDecoder: Double                       = throw new NullDecodedFailure("DOUBLE")
   }
 
+  implicit val bigDecimalDecoder: ElementDecoder[BigDecimal] = new ElementDecoder[BigDecimal] {
+
+    def textDecoder(text: String): BigDecimal = Xor.catchNonFatal(BigDecimal(text)).fold(
+      l => throw new ElementDecodingFailure("NUMERIC", l),
+      identity
+    )
+
+    private val NUMERIC_POS = 0x0000
+    private val NUMERIC_NEG = 0x4000
+    private val NUMERIC_NAN = 0xC000
+    private val NUMERIC_NULL = 0xF000
+    private val NumericHeaderSize = 16
+    private val NumericDigitBaseExponent = 4
+    private val NumericDigitBase = Math.pow(10, NumericDigitBaseExponent) // 10,000
+
+    /**
+      * Read only 16 bits, but returned the unsigned number as a 32-bit Integer
+      *
+      * @param buf The Byte Buffer
+      */
+    private def getUnsignedShort(buf: ByteBuffer) = {
+      val high = buf.get().toInt
+      val low = buf.get()
+      (high << 8) | low
+    }
+
+    def binaryDecoder(bytes: Array[Byte]): BigDecimal = Xor.catchNonFatal {
+      val buf = ByteBuffer.wrap(bytes)
+      val len = getUnsignedShort(buf)
+      val weight = buf.getShort()
+      val sign = getUnsignedShort(buf)
+      val displayScale = getUnsignedShort(buf)
+
+      //digits are actually unsigned base-10000 numbers (not straight up bytes)
+      val digits = new Array[Short](len)
+      buf.asShortBuffer().get(digits)
+      val bdDigits = digits.map(BigDecimal(_))
+
+      if(bdDigits.length > 0) {
+        val unscaled = bdDigits.tail.foldLeft(bdDigits.head) {
+          case (accum, digit) => BigDecimal(accum.bigDecimal.scaleByPowerOfTen(NumericDigitBaseExponent)) + digit
+        }
+
+        val firstDigitSize =
+          if (digits.head < 10) 1
+          else if (digits.head < 100) 2
+          else if (digits.head < 1000) 3
+          else 4
+
+        val scaleFactor = if (weight >= 0)
+          weight * NumericDigitBaseExponent + firstDigitSize
+        else
+          weight * NumericDigitBaseExponent + firstDigitSize
+        val unsigned = unscaled.bigDecimal.movePointLeft(unscaled.precision).movePointRight(scaleFactor).setScale(displayScale)
+
+        sign match {
+          case NUMERIC_POS => Xor.right(BigDecimal(unsigned))
+          case NUMERIC_NEG => Xor.right(BigDecimal(unsigned.negate()))
+          case NUMERIC_NAN => Xor.left(new NumberFormatException("Value is NaN; cannot be represented as BigDecimal"))
+          case NUMERIC_NULL => Xor.left(new NumberFormatException("Value is NULL within NUMERIC"))
+        }
+      } else {
+        Xor.right(BigDecimal(0))
+      }
+    }.flatMap(identity).fold(
+      l => throw new ElementDecodingFailure("NUMERIC", l),
+      identity
+    )
+
+    def nullDecoder: BigDecimal = throw new NullDecodedFailure("NUMERIC")
+  }
+
   implicit val booleanElementDecoder: ElementDecoder[Boolean] = new ElementDecoder[Boolean] {
     def textDecoder(text: String): Boolean         = Xor.catchNonFatal(text.head match {
       case 't' => true
@@ -155,8 +230,18 @@ object decoders {
       {r => r }
     )
     def binaryDecoder(bytes: Array[Byte]): Json = Validated.fromTry({
+      //this could be either json or jsonb - if it's jsonb, the first byte is a number representing the jsonb version.
+      //currently the version is 1, but we can say that if the first byte is unprintable, it must be a jsonb version.
+      //otherwise we have gone through 31 versions of jsonb, which hopefully won't happen before this is updated!
       val buffer = ByteBuffer.wrap(bytes)
-      JParser.parseFromByteBuffer(buffer)
+      if(buffer.remaining() <= 0)
+        Failure(new BufferUnderflowException())
+      else if(buffer.get(0) < 32) {
+        buffer.get()  //advance one byte
+        JParser.parseFromByteBuffer(buffer)
+      }
+      else
+        JParser.parseFromByteBuffer(buffer)
     }).fold(
      {l => throw new ElementDecodingFailure("JSON", l)},
      {r => r}
@@ -170,8 +255,10 @@ object decoders {
       {r => r}
     )
     def binaryDecoder(bytes: Array[Byte]): Date = Xor.catchNonFatal({
-      val text = new String(bytes, StandardCharsets.UTF_8)
-      LocalDate.parse(text)
+      val buf = ByteBuffer.wrap(bytes)
+      // Postgres represents this as Julian Day since Postgres Epoch (2000-01-01)
+      val julianDay = buf.getInt()
+      LocalDate.now().`with`(JulianFields.JULIAN_DAY, julianDay + 2451545)
     }).fold(
       {l => throw new ElementDecodingFailure("DATE", l)},
       {r => r}
@@ -185,8 +272,14 @@ object decoders {
       {r => r}
     )
     def binaryDecoder(bytes: Array[Byte]): Time = Xor.catchNonFatal({
-      val text = new String(bytes, StandardCharsets.UTF_8)
-      LocalTime.parse(text)
+      val buf = ByteBuffer.wrap(bytes)
+      // Postgres uses either an 8-byte float representing seconds since midnight, or an 8-byte long representing
+      // microseconds since midnight.
+      // We don't know which one to use inside this decoder, so we'll just assume HAVE_INT64_TIMESTAMP
+      // Some design changes would be required to make the decision appropriately.
+
+      val microSecs = buf.getLong()
+      LocalTime.ofNanoOfDay(microSecs * 1000)
     }).fold(
       {l => throw new ElementDecodingFailure("TIME", l)},
       {r => r}
@@ -196,24 +289,73 @@ object decoders {
 
   implicit val zonedDateTimeElementDecoders: ElementDecoder[TimestampWithTZ] = 
     new ElementDecoder[TimestampWithTZ] {
+
+      private val POSTGRES_TIMESTAMP_EPOCH =
+        OffsetDateTime.of(2000, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC).toInstant.toEpochMilli
+
+      //Postgres uses milliseconds since its own custom epoch (see above)
+      private def timestampToInstant(microseconds: Long) =
+        Instant.ofEpochMilli(microseconds / 1000L).plusMillis(POSTGRES_TIMESTAMP_EPOCH)
+
       private val zonedDateTimeFmt = new DateTimeFormatterBuilder()
         .appendPattern("yyyy-MM-dd HH:mm:ss")
         .appendFraction(ChronoField.MICRO_OF_SECOND, 0, 6, true)
         .appendOptional(DateTimeFormatter.ofPattern("X"))
         .toFormatter()
+
       def textDecoder(text: String): TimestampWithTZ = Xor.catchNonFatal({
         ZonedDateTime.parse(text, zonedDateTimeFmt)
       }).fold(
         {l => throw new ElementDecodingFailure("TIMESTAMP WITH TIME ZONE", l)},
         {r => r}
       )
+
       def binaryDecoder(bytes: Array[Byte]): TimestampWithTZ = Xor.catchNonFatal({
-        val text = new String(bytes, StandardCharsets.UTF_8)
-        ZonedDateTime.parse(text, zonedDateTimeFmt)
+        val buf = ByteBuffer.wrap(bytes)
+        timestampToInstant(buf.getLong).atZone(ZoneId.systemDefault())
       }).fold(
         {l => throw new ElementDecodingFailure("TIMESTAMP WITH TIME ZONE", l)},
         {r => r}
       )
       def nullDecoder: TimestampWithTZ = throw new NullDecodedFailure("TIMSTAMP WITH TIME ZONE")
     }
+
+  implicit val hstoreDecoders: ElementDecoder[HStore] = new ElementDecoder[HStore] {
+    val hstoreStringRegex = """"([^"]*)"=>(?:NULL|"([^"]*))"""".r
+    def textDecoder(text: String): HStore = Xor.catchNonFatal {
+      hstoreStringRegex.findAllMatchIn(text).map {
+        m => m.group(1) -> Option(m.group(2))
+      }.toMap
+    }.fold(
+      l => throw new ElementDecodingFailure("HSTORE", l),
+      identity
+    )
+
+    def nullDecoder(): HStore = throw new NullDecodedFailure("HSTORE")
+
+    def binaryDecoder(bytes: Array[Byte]): HStore = {
+      val buf = ByteBuffer.wrap(bytes)
+      Xor.catchNonFatal {
+        val count = buf.getInt()
+        val charset = StandardCharsets.UTF_8 //TODO: are we going to support other charsets?
+        Array.fill(count) {
+          val keyLength = buf.getInt()
+          val key = new Array[Byte](keyLength)
+          buf.get(key)
+          val valueLength = buf.getInt()
+          val value = valueLength match {
+            case -1 => None
+            case l =>
+              val valueBytes = new Array[Byte](l)
+              buf.get(valueBytes)
+              Some(valueBytes)
+          }
+          new String(key, charset) -> value.map(new String(_, charset))
+        }.toMap
+      }.fold (
+        l => throw new ElementDecodingFailure("HSTORE", l),
+        identity
+      )
+    }
+  }
 }

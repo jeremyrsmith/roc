@@ -13,28 +13,21 @@ final class DecodersSpec extends Specification with ScalaCheck { def is = s2"""
 
   StringDecoder
     must return the correct String when Text Decoding a valid String               ${StringDecoder().testTextDecoding}
-    must return the correct String when Binary Decoding a valid String Byte Array  ${StringDecoder().testBinaryDecoding}
     must throw a NullDecodedFailure when Null Decoding a String                    ${StringDecoder().testNullDecoding}
 
   BooleanDecoder
     must return the correct Boolean when Text Decoding a valid Boolean String               ${BooleanDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an Invalid Boolean String        ${BooleanDecoder().testInvalidTextDecoding}
-    must return the correct Boolean when Binary Decoding a valid Boolean Byte Array         ${BooleanDecoder().testValidByteDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Boolean Byte Array  ${BooleanDecoder().testInvalidByteDecoding}
     must throw a NullDecodedFailure when Null Decoding an Boolean                           ${BooleanDecoder().testNullDecoding}
 
   OptionDecoder
     must return Some(A) when Text Decoding a valid A                       ${OptionDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an invalid A    ${OptionDecoder().testInvalidTextDecoding}
-    must return Some(A) when Binary Decoding a valid A                     ${OptionDecoder().testValidBinaryDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid A  ${OptionDecoder().testInvalidBinaryDecoding}
     must return None when Null Decoding a valid A                          ${OptionDecoder().testNullDecoding}
 
   CharDecoder
     must return the correct Char when Text Decoding a valid String                   ${CharDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an invalid String         ${CharDecoder().testInvalidTextDecoding}
-    must return the correct Char when Binary Decoding a valid Array[Byte]            ${CharDecoder().testValidBinaryDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Array[Byte]  ${CharDecoder().testInvalidBinaryDecoding}
     must throw a NullDecodedFailure when Null Decoding a Char                        ${CharDecoder().testNullDecoding}
                                                                             """
 

@@ -14,36 +14,26 @@ final class NumericDecodersSpec extends Specification with ScalaCheck { def is =
   Short Decoder
     must return the correct Short when Text Decoding a valid Short String                 ${ShortDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when TextDecoding an Invalid Short String         ${ShortDecoder().testInvalidTextDecoding}
-    must return the correct Short when Binary Decoding a valid Short Byte Array           ${ShortDecoder().testValidBinaryDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Short Byte Array  ${ShortDecoder().testInvalidBinaryDecoding}
     must throw a NullDecodedFailure when Null Decoding a Short                            ${ShortDecoder().testNullDecoding}
 
   Int Decoder
     must return the correct Int when Text Decoding a valid Int String                   ${IntDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an Invalid Int String        ${IntDecoder().testInvalidTextDecoding}
-    must return the correct Int when Binary Decoding a valid Int Byte Array             ${IntDecoder().testValidByteDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Int Byte Array  ${IntDecoder().testInvalidByteDecoding}
     must throw a NullDecodedFailure when Null Decoding an Int                           ${IntDecoder().testNullDecoding}
 
   Long Decoder
     must return the correct Long when Text Decoding a valid Long String                  ${LongDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an Invalid Long String        ${LongDecoder().testInvalidTextDecoding}
-    must return the correct Long when Binary Decoding a valid Long Byte Array            ${LongDecoder().testValidByteDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Long Byte Array  ${LongDecoder().testInvalidByteDecoding}
     must throw a NullDecodedFailure when Null Decoding a Long                            ${LongDecoder().testNullDecoding}
 
   Float Decoder
     must return the correct Float when Text Decoding a valid Float String                 ${FloatDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an Invalid Float String        ${FloatDecoder().testInvalidTextDecoding}
-    must return the correct Float when Binary Decoding a valid Float Byte Array           ${FloatDecoder().testValidByteDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Float Byte Array  ${FloatDecoder().testInvalidByteDecoding}
     must throw a NullDecodedFailure when Null Decoding a Float                            ${FloatDecoder().testNullDecoding}
 
   Double Decoder
     must return the correct Double when Text Decoding a valid Double String                ${DoubleDecoder().testValidTextDecoding}
     must throw a ElementDecodingFailure when Text Decoding an Invalid Double String        ${DoubleDecoder().testInvalidTextDecoding}
-    must return the correct Double when Binary Decoding a valid Double Byte Array          ${DoubleDecoder().testValidByteDecoding}
-    must throw a ElementDecodingFailure when Binary Decoding an invalid Double Byte Array  ${DoubleDecoder().testInvalidByteDecoding}
     must throw a NullDecodedFailure when Null Decoding a Double                            ${DoubleDecoder().testNullDecoding}
                                                                             """
 
